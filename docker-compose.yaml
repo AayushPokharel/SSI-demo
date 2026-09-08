@@ -1,0 +1,71 @@
+#
+# nginx (installed on the host) terminates TLS for:
+#   https://ku.aayushpokharel.com         -> 127.0.0.1:8000  (issuer DIDComm)
+#   https://emp.aayushpokharel.com        -> 127.0.0.1:8020  (verifier DIDComm)
+#   https://ku-admin.aayushpokharel.com   -> 127.0.0.1:8001  (issuer admin)
+#   https://emp-admin.aayushpokharel.com  -> 127.0.0.1:8021  (verifier admin)
+
+x-agent-base: &agent-base
+  image: ghcr.io/openwallet-foundation/acapy-agent:py3.12-1.2-lts
+  restart: unless-stopped
+
+services:
+  # ---- Issuer: Kathmandu University ----------------------------------------
+  ku-agent:
+    <<: *agent-base
+    ports:
+      - "127.0.0.1:8000:8000"   # DIDComm inbound — nginx: ku.aayushpokharel.com
+      - "127.0.0.1:8001:8001"   # admin API — nginx: ku-admin.aayushpokharel.com
+    volumes:
+      - ku_wallet:/home/aries   # wallet survives `docker compose down`
+    command: >
+      start
+      --label "Kathmandu University (Issuer)"
+      --inbound-transport http 0.0.0.0 8000
+      --outbound-transport http
+      --endpoint https://${KU_HOST}
+      --admin 0.0.0.0 8001
+      --admin-insecure-mode
+      --genesis-url https://test.bcovrin.vonx.io/genesis
+      --wallet-type askar
+      --wallet-name ku_issuer
+      --wallet-key ${KU_WALLET_KEY}
+      --seed ${KU_SEED}
+      --auto-provision
+      --auto-accept-invites
+      --auto-accept-requests
+      --auto-ping-connection
+      --preserve-exchange-records
+    # If the open admin ever bites, replace --admin-insecure-mode with:
+    #   --admin-api-key ${ADMIN_API_KEY}
+    # and add  -H "X-API-KEY: <key>"  to every admin curl / Swagger authorize.
+
+  # ---- Verifier: employer ---------------------------------------------------
+  # No seed: verifiers only read the ledger. That's the point of the demo.
+  employer-agent:
+    <<: *agent-base
+    ports:
+      - "127.0.0.1:8020:8020"   # DIDComm inbound — nginx: emp.aayushpokharel.com
+      - "127.0.0.1:8021:8021"   # admin API — nginx: emp-admin.aayushpokharel.com
+    volumes:
+      - emp_wallet:/home/aries
+    command: >
+      start
+      --label "Tech Company (Verifier)"
+      --inbound-transport http 0.0.0.0 8020
+      --outbound-transport http
+      --endpoint https://${EMP_HOST}
+      --admin 0.0.0.0 8021
+      --admin-insecure-mode
+      --genesis-url https://test.bcovrin.vonx.io/genesis
+      --wallet-type askar
+      --wallet-name employer_verifier
+      --wallet-key ${EMP_WALLET_KEY}
+      --auto-provision
+      --auto-accept-invites
+      --auto-accept-requests
+      --auto-ping-connection
+      --preserve-exchange-records
+volumes:
+  ku_wallet:
+  emp_wallet:

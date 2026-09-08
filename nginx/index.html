@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSI | Live Demo Console</title>
+<script src="qrcode.min.js"></script>
+<script>window.QRCode||document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>')</script>
+<style>
+  /* ── Tokens ─────────────────────────────────────────────── */
+  :root{
+    --ink:#0b0e14;         /* room-dark background            */
+    --panel:#111624;       /* card surface                    */
+    --line:#242b3d;        /* hairlines                       */
+    --text:#e9ecf4;
+    --muted:#8b94a8;
+    --brass:#e0b458;       /* issuer — university seal        */
+    --green:#3fbf7f;       /* verifier — proof                */
+    --red:#e06060;
+    --paper:#fdfcf8;       /* QR card — QRs must sit on white */
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --disp:"Space Grotesk",system-ui,sans-serif;
+  }
+  @import url('');
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:17px}
+  body{
+    background:var(--ink);color:var(--text);
+    font-family:var(--disp);
+    min-height:100vh;display:flex;flex-direction:column;
+  }
+  @font-face{font-family:'Space Grotesk';src:local('Space Grotesk')}
+  /* Load webfonts, degrade silently on dead conference wifi */
+  .fontlink{display:none}
+
+  /* ── Header ─────────────────────────────────────────────── */
+  header{
+    display:flex;justify-content:space-between;align-items:baseline;
+    padding:1.1rem 2rem;border-bottom:1px solid var(--line);
+  }
+  header h1{font-size:1.15rem;font-weight:600;letter-spacing:.02em}
+  header h1 span{color:var(--muted);font-weight:400}
+  #ledgerBadge{font-family:var(--mono);font-size:.8rem;color:var(--muted)}
+  #ledgerBadge b{color:var(--text);font-weight:500}
+
+  /* ── Panels ─────────────────────────────────────────────── */
+  main{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;padding:1.5rem 2rem}
+  @media (max-width:900px){main{grid-template-columns:1fr}}
+  .panel{
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:1.6rem;display:flex;flex-direction:column;gap:1.1rem;position:relative;
+  }
+  .panel.issuer{border-top:3px solid var(--brass)}
+  .panel.verifier{border-top:3px solid var(--green)}
+  .role{font-family:var(--mono);font-size:.75rem;letter-spacing:.14em;text-transform:uppercase}
+  .issuer .role{color:var(--brass)} .verifier .role{color:var(--green)}
+  .panel h2{font-size:1.5rem;font-weight:600;margin-top:-.5rem}
+
+  /* ── Controls ───────────────────────────────────────────── */
+  button{
+    font-family:var(--disp);font-size:1.05rem;font-weight:600;
+    padding:.85rem 1.2rem;border-radius:10px;border:1px solid var(--line);
+    background:#1a2134;color:var(--text);cursor:pointer;width:100%;
+    transition:transform .06s ease, background .15s ease;
+  }
+  button:hover:not(:disabled){background:#222b44}
+  button:active:not(:disabled){transform:scale(.985)}
+  button:disabled{opacity:.35;cursor:not-allowed}
+  .issuer button.primary{background:var(--brass);border-color:var(--brass);color:#1c1503}
+  .verifier button.primary{background:var(--green);border-color:var(--green);color:#04130b}
+
+  .fields{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+  .fields label{font-size:.72rem;color:var(--muted);display:block;margin-bottom:.2rem}
+  .fields input{
+    width:100%;padding:.5rem .6rem;border-radius:8px;border:1px solid var(--line);
+    background:#0d1120;color:var(--text);font-family:var(--mono);font-size:.85rem;
+  }
+  .fields .wide{grid-column:1 / -1}
+
+  /* ── QR card (the prop) ─────────────────────────────────── */
+  .qrwrap{display:flex;justify-content:center;min-height:0}
+  .qrcard{
+    background:var(--paper);border-radius:12px;padding:1.1rem 1.1rem .8rem;
+    display:none;flex-direction:column;align-items:center;gap:.55rem;
+    box-shadow:0 12px 40px rgba(0,0,0,.55);
+  }
+  .qrcard.show{display:flex}
+  .qrcard .qr{width:340px;height:340px}
+  .qrcard .qr img,.qrcard .qr canvas{width:340px!important;height:340px!important}
+  .qrcard figcaption{font-family:var(--mono);font-size:.72rem;color:#5a5648;letter-spacing:.05em}
+
+  /* ── Status trail ───────────────────────────────────────── */
+  .status{
+    font-family:var(--mono);font-size:.95rem;line-height:1.55;color:var(--muted);
+    border-top:1px dashed var(--line);padding-top:.8rem;min-height:3.2rem;
+    white-space:pre-wrap;word-break:break-word;
+  }
+  .status .ok{color:var(--text)}
+  .status .live::after{content:"▮";animation:blink 1s steps(1) infinite;margin-left:.15rem}
+  @keyframes blink{50%{opacity:0}}
+  @media (prefers-reduced-motion:reduce){.status .live::after{animation:none}}
+  .err{color:var(--red)}
+
+  /* ── The stamp ──────────────────────────────────────────── */
+  .stamp{
+    position:absolute;inset:0;border-radius:14px;display:none;
+    background:rgba(6,20,13,.96);backdrop-filter:blur(2px);
+    flex-direction:column;align-items:center;justify-content:center;gap:.8rem;
+    text-align:center;padding:2rem;z-index:5;
+  }
+  .stamp.show{display:flex;animation:stampIn .35s cubic-bezier(.2,1.4,.4,1)}
+  @keyframes stampIn{from{transform:scale(1.25);opacity:0}to{transform:scale(1);opacity:1}}
+  @media (prefers-reduced-motion:reduce){.stamp.show{animation:none}}
+  .stamp .mark{
+    font-size:4.2rem;font-weight:700;letter-spacing:.06em;color:var(--green);
+    border:5px solid var(--green);border-radius:14px;padding:.4rem 2.2rem;
+    transform:rotate(-4deg);
+  }
+  .stamp .sub{font-family:var(--mono);font-size:1rem;color:var(--muted);max-width:34ch}
+  .stamp .sub b{color:var(--text)}
+  .stamp button{width:auto;margin-top:.6rem;font-size:.85rem;padding:.5rem 1rem}
+
+  footer{
+    padding:.8rem 2rem;border-top:1px solid var(--line);
+    font-family:var(--mono);font-size:.75rem;color:var(--muted);
+    display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  }
+  footer code{color:var(--text)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Transcript Trust Registry <span>· live prototype · Cloud Native Kathmandu</span></h1>
+  <div id="ledgerBadge">ledger <b>BCovrin Test</b> · cred def <b id="credDefShort">checking…</b></div>
+</header>
+
+<main>
+  <!-- ══ ISSUER ══════════════════════════════════════════════ -->
+  <section class="panel issuer">
+    <div class="role">Issuer · signs &amp; issues</div>
+    <h2>Kathmandu University</h2>
+
+    <button id="btnInvite" class="primary">1 · Connect the student — show QR</button>
+
+    <div class="qrwrap"><figure class="qrcard" id="qrIssuer">
+      <div class="qr" id="qrIssuerBox"></div>
+      <figcaption>SCAN WITH BC WALLET · DIDCOMM INVITATION</figcaption>
+    </figure></div>
+
+    <div class="fields" id="credForm">
+      <div class="wide"><label>Student name</label><input id="f_name" value="Aayush Pokharel"></div>
+      <div><label>Registration №</label><input id="f_reg" value="016xxx-19"></div>
+      <div><label>Graduation year</label><input id="f_year" value="2023"></div>
+      <div><label>Program</label><input id="f_prog" value="BSc Computer Science"></div>
+      <div><label>CGPA</label><input id="f_cgpa" value="3.27"></div>
+    </div>
+
+    <button id="btnIssue" disabled>2 · Issue the transcript credential</button>
+    <div class="status" id="stIssuer">Ready. Create the invitation to begin.</div>
+  </section>
+
+  <!-- ══ VERIFIER ════════════════════════════════════════════ -->
+  <section class="panel verifier">
+    <div class="role">Verifier · checks signatures, never calls KU</div>
+    <h2>Employer</h2>
+
+    <button id="btnVInvite" class="primary">3 · Connect the applicant — show QR</button>
+
+    <div class="qrwrap"><figure class="qrcard" id="qrVerifier">
+      <div class="qr" id="qrVerifierBox"></div>
+      <figcaption>SCAN WITH BC WALLET · PROOF CHANNEL</figcaption>
+    </figure></div>
+
+    <button id="btnProof" disabled>4 · Request proof of transcript</button>
+    <div class="status" id="stVerifier">Waiting for the issuance act to finish.</div>
+
+    <div class="stamp" id="stamp">
+      <div class="mark">VERIFIED</div>
+      <div class="sub">Signature checked against the <b>ledger</b>.<br>
+        Zero API calls to Kathmandu University.<br>
+        <b>The issuer can be offline.</b></div>
+      <button onclick="document.getElementById('stamp').classList.remove('show')">dismiss</button>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div>issuer admin <code id="cfgIss"></code> · verifier admin <code id="cfgVer"></code></div>
+</footer>
+
+<script>
+/* ── Config ──────────────────────────────────────────────── */
+const ISSUER   = "https://ku-admin.aayushpokharel.com";
+const VERIFIER = "https://emp-admin.aayushpokharel.com";
+document.getElementById("cfgIss").textContent = ISSUER;
+document.getElementById("cfgVer").textContent = VERIFIER;
+
+let credDefId = null;
+let issuerConn = null, verifierConn = null;
+
+/* ── Helpers ─────────────────────────────────────────────── */
+const $ = id => document.getElementById(id);
+async function api(base, path, opts={}) {
+  const r = await fetch(base + path, {
+    headers: {"Content-Type":"application/json"},
+    ...opts,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  if (!r.ok) throw new Error(`${path} → HTTP ${r.status}: ${await r.text()}`);
+  return r.json();
+}
+function say(el, msg, live=false){ $(el).innerHTML = msg + (live ? ' <span class="live"></span>' : ""); }
+function append(el, msg){ $(el).innerHTML = $(el).innerHTML.replace(/ <span class="live"><\/span>/,"") + "\n" + msg; }
+function fail(el, e){ append(el, `<span class="err">✗ ${e.message}</span>`); console.error(e); }
+function drawQR(boxId, cardId, url){
+  $(boxId).innerHTML = "";
+  new QRCode($(boxId), {text:url, width:340, height:340, correctLevel:QRCode.CorrectLevel.M});
+  $(cardId).classList.add("show");
+}
+const connReady = c => ["active","completed"].includes(c.state) || c.rfc23_state === "completed";
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* ── Cred def discovery: at boot, and lazily before acts 2/4 ─ */
+async function loadCredDef() {
+  try {
+    const d = await api(ISSUER, "/credential-definitions/created");
+    const ids = d.credential_definition_ids || [];
+    if (!ids.length) {
+      $("credDefShort").textContent = "MISSING — run setup-demo.sh";
+      $("credDefShort").classList.add("err");
+      return null;
+    }
+    credDefId = ids[ids.length - 1];
+    try { localStorage.setItem("ssi_cred_def_id", credDefId); } catch(_) {}
+    $("credDefShort").textContent = "…" + credDefId.slice(-18);
+    $("credDefShort").classList.remove("err");
+    return credDefId;
+  } catch (e) {
+    console.error(e);
+    // Issuer admin is down (e.g. the kill-switch beat). A real verifier knows
+    // which credential type it accepts without asking the issuer — so do we:
+    let cached = null;
+    try { cached = localStorage.getItem("ssi_cred_def_id"); } catch(_) {}
+    if (cached) {
+      credDefId = cached;
+      $("credDefShort").textContent = "…" + credDefId.slice(-18) + " (cached · issuer offline)";
+      $("credDefShort").classList.remove("err");
+      return credDefId;
+    }
+    $("credDefShort").textContent = "issuer unreachable";
+    $("credDefShort").classList.add("err");
+    return null;
+  }
+}
+async function ensureCredDef() {
+  if (credDefId) return credDefId;
+  const id = await loadCredDef();   // maybe setup-demo.sh ran after page load
+  if (!id) throw new Error(
+    "no credential definition on the issuer — run setup-demo.sh, then click this button again (no refresh needed)");
+  return id;
+}
+loadCredDef();
+
+/* ── Act 1: connect the student to the issuer ────────────── */
+$("btnInvite").onclick = async () => {
+  try {
+    say("stIssuer", "creating invitation…", true);
+    const inv = await api(ISSUER, "/out-of-band/create-invitation", {method:"POST",
+      body:{handshake_protocols:["https://didcomm.org/didexchange/1.1"]}});
+    drawQR("qrIssuerBox", "qrIssuer", inv.invitation_url);
+    say("stIssuer", "invitation shown · waiting for scan", true);
+
+    for (;;) {
+      await sleep(2000);
+      const cs = await api(ISSUER, "/connections");
+      const c = (cs.results||[]).find(x => x.invitation_msg_id === inv.invi_msg_id);
+      if (c && c.state !== "invitation") say("stIssuer",
+        `invitation → <span class="ok">${c.rfc23_state || c.state}</span>`, !connReady(c));
+      if (c && connReady(c)) {
+        issuerConn = c.connection_id;
+        append("stIssuer", `<span class="ok">✓ connected: ${c.their_label || "wallet"}</span>`);
+        $("qrIssuer").classList.remove("show");
+        $("btnIssue").disabled = false;
+        break;
+      }
+    }
+  } catch (e) { fail("stIssuer", e); }
+};
+
+/* ── Act 2: issue the credential ─────────────────────────── */
+$("btnIssue").onclick = async () => {
+  try {
+    $("btnIssue").disabled = true;
+    await ensureCredDef();
+    say("stIssuer", "sending credential offer…", true);
+    const ex = await api(ISSUER, "/issue-credential-2.0/send", {method:"POST", body:{
+      connection_id: issuerConn,
+      auto_remove: false,
+      credential_preview: {
+        "@type": "issue-credential/2.0/credential-preview",
+        attributes: [
+          {name:"student_name",    value:$("f_name").value},
+          {name:"registration_no", value:$("f_reg").value},
+          {name:"program",         value:$("f_prog").value},
+          {name:"cgpa",            value:$("f_cgpa").value},
+          {name:"graduation_year", value:$("f_year").value},
+        ]},
+      filter: {indy: {cred_def_id: credDefId}},   // v2 API: cred def rides in `filter`
+    }});
+    for (;;) {
+      await sleep(2000);
+      const r = await api(ISSUER, `/issue-credential-2.0/records/${ex.cred_ex_id}`).catch(()=>null);
+      const st = r?.cred_ex_record?.state;
+      if (!st) break;
+      say("stIssuer", `credential: <span class="ok">${st}</span>`, !["done","abandoned"].includes(st));
+      if (st === "abandoned") {
+        append("stIssuer", '<span class="err">✗ offer declined on the phone.</span> click 2 to offer again');
+        $("btnIssue").disabled = false;
+        break;
+      }
+      if (st === "done") {
+        append("stIssuer", '<span class="ok">✓ transcript is on the phone. It exists nowhere else.</span>');
+        break;
+      }
+    }
+  } catch (e) { fail("stIssuer", e); $("btnIssue").disabled = false; }
+};
+
+/* ── Act 3: connect the applicant to the verifier ────────── */
+$("btnVInvite").onclick = async () => {
+  try {
+    say("stVerifier", "creating invitation…", true);
+    const inv = await api(VERIFIER, "/out-of-band/create-invitation", {method:"POST",
+      body:{handshake_protocols:["https://didcomm.org/didexchange/1.1"]}});
+    drawQR("qrVerifierBox", "qrVerifier", inv.invitation_url);
+    say("stVerifier", "invitation shown · waiting for scan", true);
+
+    for (;;) {
+      await sleep(2000);
+      const cs = await api(VERIFIER, "/connections");
+      const c = (cs.results||[]).find(x => x.invitation_msg_id === inv.invi_msg_id);
+      if (c && connReady(c)) {
+        verifierConn = c.connection_id;
+        append("stVerifier", `<span class="ok">✓ connected: ${c.their_label || "wallet"}</span>`);
+        $("qrVerifier").classList.remove("show");
+        $("btnProof").disabled = false;
+        break;
+      }
+    }
+  } catch (e) { fail("stVerifier", e); }
+};
+
+/* ── Act 4: request and verify proof ─────────────────────── */
+$("btnProof").onclick = async () => {
+  try {
+    $("btnProof").disabled = true;
+    await ensureCredDef();
+    say("stVerifier", "sending proof request…", true);
+    const ex = await api(VERIFIER, "/present-proof-2.0/send-request", {method:"POST", body:{
+      connection_id: verifierConn,
+      auto_verify: true,
+      auto_remove: false,   // keep the record so we can poll it to "done"
+      presentation_request: {indy: {
+        name: "Employment verification", version: "1.0",
+        requested_attributes: {
+          "0_program": {name:"program",         restrictions:[{cred_def_id: credDefId}]},
+          "0_grad":    {name:"graduation_year", restrictions:[{cred_def_id: credDefId}]},
+        },
+        requested_predicates: {},
+      }},
+    }});
+    for (;;) {
+      await sleep(2000);
+      const r = await api(VERIFIER, `/present-proof-2.0/records/${ex.pres_ex_id}`).catch(()=>null);
+      const st = r?.pres_ex_record?.state ?? r?.state;
+      const verified = r?.pres_ex_record?.verified ?? r?.verified;
+      if (!st) {   // record auto-removed = exchange completed before we could read it
+        append("stVerifier",
+          '<span class="ok">exchange record was auto-removed by the agent — the presentation completed.</span>');
+        $("stamp").classList.add("show");
+        break;
+      }
+      say("stVerifier", `proof: <span class="ok">${st}</span> · consent happens on the phone`, !["done","abandoned"].includes(st));
+      if (st === "abandoned") {
+        append("stVerifier", '<span class="err">✗ declined on the phone — consent is real. Nothing left the wallet.</span>');
+        append("stVerifier", "connection is still live · click 4 to ask again");
+        $("btnProof").disabled = false;
+        break;
+      }
+      if (st === "done") {
+        if (String(verified) === "true") $("stamp").classList.add("show");
+        else append("stVerifier", '<span class="err">✗ presentation received but NOT verified</span>');
+        break;
+      }
+    }
+  } catch (e) { fail("stVerifier", e); $("btnProof").disabled = false; }
+};
+</script>
+</body>
+</html>

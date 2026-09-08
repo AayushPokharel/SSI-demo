@@ -1,2 +1,3 @@
 # SSI-demo
-Code for my talk of Self Sovereign Identity with Hyperledger Indy 
+
+This repo hold my code for the talk I gave at Cloud Native Kathmandu Meetup on Hyperledger Indy and Self Sovereign Identity.
